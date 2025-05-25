@@ -18,7 +18,6 @@
 #define CBC 1
 #define CTR 1
 #define ECB 1
-#define AES256 1
 
 //AES_KEY
 static unsigned char AES_KEY[16] = {
@@ -33,45 +32,47 @@ static unsigned char AES_IV[16] = {
 
 jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     jbyte *input = jni_env->GetByteArrayElements(jarray, 0);
-    jsize dlen = jni_env->GetArrayLength(jarray);
+    jsize data_length = jni_env->GetArrayLength(jarray);
 
-    printf("padding before = %d\n", dlen);
+    printf("padding before = %d\n", data_length);
     // padding
-    int dlenu = dlen;
-    if (dlen % 16 != 0) {
-        dlenu += 16 - (dlen % 16);
-    }
-    printf("padding after = %d\n", dlenu);
-    uint8_t *hexarray = (uint8_t *) malloc(dlenu);
-    if (!hexarray) {
-        free(input);
+    uint8_t padding_length = pkcs7_padding_pad_count(data_length, AES_BLOCKLEN);
+    printf("padding val : %02x\n", padding_length);
+    int data_padded_length = data_length + padding_length;
+    uint8_t *hexarray = (uint8_t *) malloc(data_padded_length);
+    if (hexarray == NULL) {
         return NULL;
     }
-    memset(hexarray, 0, dlenu);
-    for (int i = 0; i < dlen; i++) {
-        hexarray[i] = (uint8_t) input[i];
-    }
+    memset(hexarray, 0, data_padded_length);
+    memcpy(hexarray, input, data_length);
     printf("----- array start -----\n");
-    for (int i = 0; i < dlen; ++i) {
+    for (int i = 0; i < data_length; ++i) {
         printf("%02x", hexarray[i]);
     }
     printf("\n----- array end -----\n");
 
-    struct AES_ctx ctx;
-    AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
-    AES_CBC_encrypt_buffer(&ctx, (uint8_t *) hexarray, dlenu);
+    printf("----- padding start -----\n");
+    pkcs7_padding_add_padding(hexarray, data_padded_length, data_length);
+    for (int i = data_length; i < data_padded_length; ++i) {
+        printf("%02x", hexarray[i]);
+    }
+    printf("\n----- padding end -----\n");
+
+    printf("padding after = %d\n", data_padded_length);
 
     printf("----- encrypted start -----\n");
-    for (int i = 0; i < dlenu; ++i) {
+    struct AES_ctx ctx;
+    AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
+    AES_CBC_encrypt_buffer(&ctx, (uint8_t *) hexarray, data_padded_length);
+    for (int i = 0; i < data_padded_length; ++i) {
         printf("%02x", hexarray[i]);
     }
     printf("\n----- encrypted end -----\n");
 
-    jbyteArray new_array = jni_env->NewByteArray(dlenu);
-    jni_env->SetByteArrayRegion(new_array, 0, dlenu, (jbyte *) hexarray);
+    jbyteArray new_array = jni_env->NewByteArray(data_padded_length);
+    jni_env->SetByteArrayRegion(new_array, 0, data_padded_length, (jbyte *) hexarray);
 
     jni_env->ReleaseByteArrayElements(jarray, input, 0);
-    free(input);
     free(hexarray);
 
     return new_array;
@@ -84,24 +85,48 @@ jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
 //     }
 // }
 
-void decrypt(JNIEnv *jni_env, char *input) {
-    int dlenu = strlen(input);
-    uint8_t *hexarray = (uint8_t *) malloc(dlenu);
-    if (!hexarray) {
-        free(input);
-        return;
+jbyteArray decrypt(JNIEnv *jni_env, unsigned char *data, size_t data_length) {
+    uint8_t *hexarray = (uint8_t *) malloc(data_length);
+    if (hexarray == NULL) {
+        return NULL;
     }
-    memset(hexarray, 0, dlenu);
-    for (int i = 0; i < dlenu; i++) {
-        hexarray[i] = (uint8_t) input[i];
-    }
+    memset(hexarray, 0, data_length);
+    memcpy(hexarray, data, data_length);
+
+    printf("remove padding before = %d\n", data_length);
 
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
 
-    AES_CBC_decrypt_buffer(&ctx, hexarray, (size_t) dlenu);
+    AES_CBC_decrypt_buffer(&ctx, hexarray, (size_t) data_length);
 
-    size_t actualDataLength = pkcs7_padding_data_length(hexarray, dlenu, 16);
+    printf("----- decrypted start -----\n");
+    for (int i = 0; i < data_length; ++i) {
+        printf("%02x", hexarray[i]);
+    }
+    printf("\n----- decrypted end -----\n");
+
+    int pad_count = pkcs7_padding_un_pad_count(hexarray, data_length);
+    if (-1 == pad_count) {
+        free(hexarray);
+        return NULL;
+    }
+    int count = data_length - pad_count;
+    printf("remove padding after : %02x : %d\n", pad_count, count);
+
+    uint8_t *outarray = (uint8_t *) malloc(count);
+    if (outarray == NULL) {
+        free(hexarray);
+        return NULL;
+    }
+    memset(outarray, 0, count);
+    memcpy(outarray, hexarray, count);
+
+    jbyteArray new_array = jni_env->NewByteArray(count);
+    jni_env->SetByteArrayRegion(new_array, 0, count, (jbyte *) outarray);
+
+    free(outarray);
+    return new_array;
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
@@ -134,7 +159,6 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
 
     if (name && strstr(name, pkg) != NULL && strstr(name, "CGLIB$$") == NULL) {
         printf("--- decrypt class %s\n", name);
-        fflush(stdout);
 
         // *new_class_data_len = class_data_len;
         // jvmti_env->Allocate(class_data_len, new_class_data);
@@ -145,7 +169,17 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
         // }
         // decrypt((char *) my_data);
 
-        decrypt(jni_env, (char *) class_data);
+        jbyteArray array = decrypt(jni_env, (unsigned char *) class_data, class_data_len);
+        jsize array_size = jni_env->GetArrayLength(array);
+        *new_class_data_len = array_size;
+        jvmti_env->Allocate(array_size, new_class_data);
+        unsigned char *my_data = *new_class_data;
+        jbyte *input = jni_env->GetByteArrayElements(array, 0);
+        for (int i = 0; i < array_size; i++) {
+            my_data[i] = input[i];
+        }
+        jni_env->ReleaseByteArrayElements(array, input, 0);
+
     } else {
         *new_class_data_len = class_data_len;
         jvmti_env->Allocate(class_data_len, new_class_data);

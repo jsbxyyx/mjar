@@ -76,3 +76,6 @@ fabric.properties
 
 #
 /libmjar.dll
+/testjar-enc.jar
+
+cmake-build-*/

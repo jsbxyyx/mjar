@@ -1,56 +1,31 @@
 #include "pkcs7_padding.h"
 
-int pkcs7_padding_pad_buffer( uint8_t *buffer,  size_t data_length, size_t buffer_size, uint8_t modulus ){
-    uint8_t pad_byte = modulus - ( data_length % modulus ) ;
-    if( data_length + pad_byte > buffer_size ){
-        return -pad_byte;
+int pkcs7_padding_add_padding(uint8_t *data, size_t data_padded_length, size_t data_length) {
+    int code = data_padded_length - data_length;
+    size_t index = data_length;
+    while (index < data_padded_length) {
+        data[index] = (uint8_t) code;
+        index++;
     }
-    int i = 0;
-    while( i <  pad_byte){
-        buffer[data_length+i] = pad_byte;
-        i++;
-    }
-    return pad_byte;
+    return code;
 }
 
-int pkcs7_padding_valid( uint8_t *buffer, size_t data_length, size_t buffer_size, uint8_t modulus ){
-    uint8_t expected_pad_byte = modulus - ( data_length % modulus ) ;
-    if( data_length + expected_pad_byte > buffer_size ){
-        return 0;
+int pkcs7_padding_un_pad_count(uint8_t *data, size_t data_length) {
+    int count_val = data[data_length - 1];
+    int count = count_val & 0xFF;
+    int position = data_length - count;
+
+    int failed = (position | (count - 1)) >> 31;
+    for (int i = 0; i < data_length; ++i) {
+        failed |= (data[i] ^ count_val) & ~((i - position) >> 31);
     }
-    int i = 0;
-    while( i < expected_pad_byte ){
-        if( buffer[data_length + i] != expected_pad_byte){
-            return 0;
-        }
-        i++;
+    if (failed != 0) {
+        return -1;
     }
-    return 1;
+    return count;
 }
 
-size_t pkcs7_padding_data_length( uint8_t * buffer, size_t buffer_size, uint8_t modulus ){
-    /* test for valid buffer size */
-    if( buffer_size % modulus != 0 ||
-      buffer_size < modulus ){
-        return 0;
-      }
-    uint8_t padding_value;
-    padding_value = buffer[buffer_size-1];
-    /* test for valid padding value */
-    if( padding_value < 1 || padding_value > modulus ){
-        return 0;
-    }
-    /* buffer must be at least padding_value + 1 in size */
-    if( buffer_size < padding_value + 1 ){
-        return 0;
-    }
-    uint8_t count = 1;
-    buffer_size --;
-    for( ; count  < padding_value ; count++){
-        buffer_size --;
-        if( buffer[buffer_size] != padding_value ){
-            return 0;
-        }
-    }
-    return buffer_size;
+uint8_t pkcs7_padding_pad_count(size_t data_length, uint8_t block_size) {
+    uint8_t padding_length = block_size - (data_length % block_size);
+    return padding_length;
 }
