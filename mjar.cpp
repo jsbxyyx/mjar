@@ -47,6 +47,7 @@ jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     int data_padded_length = data_length + padding_length;
     uint8_t *hexarray = (uint8_t *) malloc(data_padded_length);
     if (hexarray == NULL) {
+        jni_env->ReleaseByteArrayElements(jarray, input, 0);
         return NULL;
     }
     memset(hexarray, 0, data_padded_length);
@@ -139,9 +140,16 @@ jbyteArray decrypt(JNIEnv *jni_env, unsigned char *data, size_t data_length) {
     memcpy(outarray, hexarray, count);
 
     jbyteArray new_array = jni_env->NewByteArray(count);
+    if (new_array == NULL) {
+        free(outarray);
+        free(hexarray);
+        return NULL;
+    }
     jni_env->SetByteArrayRegion(new_array, 0, count, (jbyte *) outarray);
 
     free(outarray);
+    free(hexarray);
+    
     return new_array;
 }
 
@@ -186,6 +194,13 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
         // decrypt((char *) my_data);
 
         jbyteArray array = decrypt(jni_env, (unsigned char *) class_data, class_data_len);
+        if (array == NULL) {
+            *new_class_data_len = class_data_len;
+            jvmti_env->Allocate(class_data_len, new_class_data);
+            unsigned char *my_data = *new_class_data;
+            memcpy(my_data, class_data, class_data_len);
+            return;
+        }
         jsize array_size = jni_env->GetArrayLength(array);
         *new_class_data_len = array_size;
         jvmti_env->Allocate(array_size, new_class_data);
@@ -195,7 +210,7 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
             my_data[i] = input[i];
         }
         jni_env->ReleaseByteArrayElements(array, input, 0);
-
+        jni_env->DeleteLocalRef(array);
     } else {
         *new_class_data_len = class_data_len;
         jvmti_env->Allocate(class_data_len, new_class_data);
@@ -220,7 +235,7 @@ Agent_OnLoad(JavaVM *vm,
         return 1;
     }
 
-    pkg = options;
+    pkg = strdup(options);
     printf("--- options %s\n", options);
 
     m_pJvmTI = jvmti;
