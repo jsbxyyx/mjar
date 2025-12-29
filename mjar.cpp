@@ -19,6 +19,8 @@
 #define CTR 1
 #define ECB 1
 
+#define LOG_DEBUG 0
+
 //AES_KEY
 static unsigned char AES_KEY[16] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
@@ -34,10 +36,14 @@ jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     jbyte *input = jni_env->GetByteArrayElements(jarray, 0);
     jsize data_length = jni_env->GetArrayLength(jarray);
 
-    printf("padding before = %d\n", data_length);
+    if (LOG_DEBUG) {
+        printf("padding before = %d\n", data_length);
+    }
     // padding
     uint8_t padding_length = pkcs7_padding_pad_count(data_length, AES_BLOCKLEN);
-    printf("padding val : %02x\n", padding_length);
+    if (LOG_DEBUG) {
+        printf("padding val : %02x\n", padding_length);
+    }
     int data_padded_length = data_length + padding_length;
     uint8_t *hexarray = (uint8_t *) malloc(data_padded_length);
     if (hexarray == NULL) {
@@ -45,29 +51,34 @@ jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     }
     memset(hexarray, 0, data_padded_length);
     memcpy(hexarray, input, data_length);
-    printf("----- array start -----\n");
-    for (int i = 0; i < data_length; ++i) {
-        printf("%02x", hexarray[i]);
+    if (LOG_DEBUG) {
+        printf("----- log array start -----\n");
+        for (int i = 0; i < data_length; ++i) {
+            printf("%02x", hexarray[i]);
+        }
+        printf("\n----- log array end -----\n");
     }
-    printf("\n----- array end -----\n");
-
-    printf("----- padding start -----\n");
+    
     pkcs7_padding_add_padding(hexarray, data_padded_length, data_length);
-    for (int i = data_length; i < data_padded_length; ++i) {
-        printf("%02x", hexarray[i]);
+    if (LOG_DEBUG) {
+        printf("----- log padding start -----\n");
+        for (int i = data_length; i < data_padded_length; ++i) {
+            printf("%02x", hexarray[i]);
+        }
+        printf("\n----- log padding end -----\n");
+        printf("padding after = %d\n", data_padded_length);
     }
-    printf("\n----- padding end -----\n");
 
-    printf("padding after = %d\n", data_padded_length);
-
-    printf("----- encrypted start -----\n");
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
     AES_CBC_encrypt_buffer(&ctx, (uint8_t *) hexarray, data_padded_length);
-    for (int i = 0; i < data_padded_length; ++i) {
-        printf("%02x", hexarray[i]);
+    if (LOG_DEBUG) {
+        printf("----- log encrypted start -----\n");
+        for (int i = 0; i < data_padded_length; ++i) {
+            printf("%02x", hexarray[i]);
+        }
+        printf("\n----- log encrypted end -----\n");
     }
-    printf("\n----- encrypted end -----\n");
 
     jbyteArray new_array = jni_env->NewByteArray(data_padded_length);
     jni_env->SetByteArrayRegion(new_array, 0, data_padded_length, (jbyte *) hexarray);
@@ -93,18 +104,21 @@ jbyteArray decrypt(JNIEnv *jni_env, unsigned char *data, size_t data_length) {
     memset(hexarray, 0, data_length);
     memcpy(hexarray, data, data_length);
 
-    printf("remove padding before = %d\n", data_length);
+    if (LOG_DEBUG) {
+        printf("remove padding before = %d\n", data_length);
+    }
 
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, AES_KEY, AES_IV);
-
     AES_CBC_decrypt_buffer(&ctx, hexarray, (size_t) data_length);
 
-    printf("----- decrypted start -----\n");
-    for (int i = 0; i < data_length; ++i) {
-        printf("%02x", hexarray[i]);
+    if (LOG_DEBUG) {
+        printf("----- decrypted start -----\n");
+        for (int i = 0; i < data_length; ++i) {
+            printf("%02x", hexarray[i]);
+        }
+        printf("\n----- decrypted end -----\n");
     }
-    printf("\n----- decrypted end -----\n");
 
     int pad_count = pkcs7_padding_un_pad_count(hexarray, data_length);
     if (-1 == pad_count) {
@@ -112,7 +126,9 @@ jbyteArray decrypt(JNIEnv *jni_env, unsigned char *data, size_t data_length) {
         return NULL;
     }
     int count = data_length - pad_count;
-    printf("remove padding after : %02x : %d\n", pad_count, count);
+    if (LOG_DEBUG) {
+        printf("remove padding after : %02x : %d\n", pad_count, count);
+    }
 
     uint8_t *outarray = (uint8_t *) malloc(count);
     if (outarray == NULL) {
