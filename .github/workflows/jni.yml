@@ -80,10 +80,12 @@ jobs:
         id: tag
         env:
           XX: ''
+          RUN_OS: ${{ matrix.os }}
+        shell: bash
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          TAG=v$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
+          TAG=v${RUN_OS}-$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
           git tag -a $TAG -m "Published version $TAG" ${GITHUB_SHA}
           git push origin $TAG
           echo "new_tag=$TAG" >> $GITHUB_OUTPUT
