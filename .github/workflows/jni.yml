@@ -44,19 +44,19 @@ jobs:
 
       # 3. 不同平台的额外依赖（可选）
       - name: Install dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential
 
       - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-2022'
         shell: pwsh
         run: |
           choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"'
 
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-12'
         run: |
           brew update
           brew install cmake
@@ -69,7 +69,7 @@ jobs:
       # 5. 编译
       - name: Build
         run: |
-          cmake --build build --config Release -- -j 4
+          cmake --build build --config Release
 
       # 6. 列出构建产物（方便调试）
       - name: List build outputs
@@ -83,7 +83,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          TAG=v${VER}$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
+          TAG=v$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
           git tag -a $TAG -m "Published version $TAG" ${GITHUB_SHA}
           git push origin $TAG
           echo "new_tag=$TAG" >> $GITHUB_OUTPUT
