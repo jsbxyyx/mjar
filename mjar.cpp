@@ -147,23 +147,14 @@ static jbyteArray decrypt(JNIEnv *jni_env, const char *name, unsigned char *data
     }
     jni_env->SetByteArrayRegion(new_array, 0, count, (jbyte *) outarray);
 
-    printf("----- decrypted %s, header : ", name);
-    int limit = count < 8 ? count : 8;
-    for (int i = 0; i < limit; ++i) {
-        printf("%02x ", outarray[i]);
-    }
-    printf("-----\n");
-
     free(outarray);
     free(hexarray);
 
     return new_array;
 }
 
-static bool g_helper_bound = false;
-
 static jbyteArray JNICALL
-native_maybe_decrypt(JNIEnv *env, jclass /*clazz*/, jbyteArray jbuf, jint offset) {
+native_maybe_decrypt(JNIEnv *env, jclass clazz, jbyteArray jbuf, jint offset) {
     if (jbuf == nullptr) {
         return nullptr;
     }
@@ -250,43 +241,6 @@ native_maybe_decrypt(JNIEnv *env, jclass /*clazz*/, jbyteArray jbuf, jint offset
     return jout;
 }
 
-static void try_bind_NativeDecryptHelper(JavaVM *vm) {
-    if (g_helper_bound) {
-        return;
-    }
-
-    JNIEnv *env = nullptr;
-    if (vm->GetEnv((void **) &env, JNI_VERSION_1_6) != JNI_OK || env == nullptr) {
-        printf("WARN: try_bind_NativeDecryptHelper: GetEnv failed\n");
-        return;
-    }
-
-    jclass helperClazz = env->FindClass("com/github/jsbxyyx/mjar/NativeDecryptHelper");
-    if (helperClazz == NULL) {
-        // 类尚未加载，稍后在 ClassFileLoadHook 中再尝试
-        if (LOG_DEBUG) {
-            printf("INFO: NativeDecryptHelper not yet loaded\n");
-        }
-        return;
-    }
-
-    JNINativeMethod methods[] = {
-        {
-            const_cast<char *>("maybeDecrypt"),
-            const_cast<char *>("([BI)[B"),
-            (void *) &native_maybe_decrypt
-        }
-    };
-
-    if (env->RegisterNatives(helperClazz, methods, 1) != 0) {
-        printf("ERROR: RegisterNatives for NativeDecryptHelper.maybeDecrypt failed\n");
-        return;
-    }
-
-    g_helper_bound = true;
-    printf("INFO: NativeDecryptHelper.maybeDecrypt bound successfully\n");
-}
-
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_github_jsbxyyx_mjar_Mjarencrypt_encrypt
 (JNIEnv *jni_env, jobject arg, jbyteArray _buf) {
@@ -304,7 +258,7 @@ static JavaVM *g_vm = NULL;
 
 const char *pkg = NULL;
 
-void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
+static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
                                        JNIEnv *jni_env,
                                        jclass class_being_redefined,
                                        jobject loader,
@@ -314,21 +268,16 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
                                        const unsigned char *class_data,
                                        jint *new_class_data_len,
                                        unsigned char **new_class_data) {
-    if (!g_helper_bound && name != NULL) {
-        if (strcmp(name, "com/github/jsbxyyx/mjar/NativeDecryptHelper") == 0) {
-            if (g_vm != NULL) {
-                try_bind_NativeDecryptHelper(g_vm);
-            }
-        }
-    }
 
     if (name != NULL && (strcmp(name, "org/springframework/asm/ClassReader") == 0
                  || strcmp(name, "org/objectweb/asm/ClassReader") == 0)) {
-        printf("--- [JVMTI] ClassFileLoadHook: %s\n", name);
+        printf("--- ClassFileLoadHook: %s\n", name);
     }
 
-    if (name != NULL && strstr(name, pkg) != NULL) {
-        printf("--- [JVMTI] ClassFileLoadHook: %s\n", name);
+    if (LOG_DEBUG) {
+        if (name != NULL && strstr(name, pkg) != NULL) {
+            printf("--- ClassFileLoadHook: %s\n", name);
+        }
     }
     if (name != NULL && strstr(name, pkg) != NULL && strstr(name, "CGLIB$$") == NULL) {
         printf("--- decrypt class %s\n", name);
@@ -384,6 +333,25 @@ void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
     }
 }
 
+static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jclass klass) {
+    char* signature;
+    if (jvmti_env->GetClassSignature(klass, &signature, NULL) == JVMTI_ERROR_NONE) {
+        // 注意：Lorg/springframework/asm/ClassReader; 是标准的 JVM 签名格式
+        if (signature != NULL && strcmp(signature, "Lorg/springframework/asm/ClassReader;") == 0) {
+            JNINativeMethod methods[] = {
+                {(char*)"maybeDecrypt", (char*)"([BI)[B", (void*)&native_maybe_decrypt}
+            };
+            // 此时类已经 Prepare 完毕，注册 Native 方法是安全的
+            if (jni_env->RegisterNatives(klass, methods, 1) == 0) {
+                printf("--- [JVMTI] Native method bound to ClassReader via OnClassPrepare\n");
+            } else {
+                printf("--- [JVMTI] ERROR: RegisterNatives failed\n");
+            }
+        }
+        jvmti_env->Deallocate((unsigned char*)signature);
+    }
+}
+
 JNIEXPORT jint JNICALL
 Agent_OnLoad(JavaVM *vm,
              char *options,
@@ -424,6 +392,7 @@ Agent_OnLoad(JavaVM *vm,
     // Clear the callbacks structure and set the ones you want.
     (void) memset(&callbacks, 0, sizeof(callbacks));
     callbacks.ClassFileLoadHook = &CallbackClassFileLoadHook;
+    callbacks.ClassPrepare = &OnClassPrepare;
 
     error = jvmti->SetEventCallbacks(&callbacks, (jint) sizeof(callbacks));
     if (error != JVMTI_ERROR_NONE) {
@@ -432,12 +401,19 @@ Agent_OnLoad(JavaVM *vm,
     }
 
     // For each of the above callbacks, enable this event.
+    error = jvmti->SetEventNotificationMode(JVMTI_ENABLE, JVMTI_EVENT_CLASS_PREPARE, (jthread) NULL);
+    if (error != JVMTI_ERROR_NONE) {
+        printf("ERROR: Unable to SetEventNotificationMode JVMTI_EVENT_CLASS_PREPARE JVMTI!\n");
+        return error;
+    }
+
     error = jvmti->SetEventNotificationMode(JVMTI_ENABLE,
                                             JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
                                             (jthread) NULL);
     if (error != JVMTI_ERROR_NONE) {
-        printf("ERROR: Unable to SetEventNotificationMode JVMTI!\n");
+        printf("ERROR: Unable to SetEventNotificationMode JVMTI_EVENT_CLASS_FILE_LOAD_HOOK JVMTI!\n");
         return error;
     }
-    return JNI_OK; // Indicates to the VM that the agent loaded OK.
+
+    return JNI_OK;
 }
