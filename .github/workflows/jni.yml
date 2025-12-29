@@ -1,0 +1,95 @@
+name: Build JNI with CMake (Linux / Windows / macOS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'info'
+        type: choice
+        options:
+        - info
+        - warning
+        - debug
+
+jobs:
+  build-jni:
+    name: Build JNI on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-12]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 1. 安装 JDK（这里用 Temurin 17，你可以换成 8/11/21 等）
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      # 2. 如果需要，可以打印 JAVA_HOME
+      - name: Show Java info
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+
+      # 3. 不同平台的额外依赖（可选）
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"'
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install cmake
+
+      # 4. CMake 配置
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      # 5. 编译
+      - name: Build
+        run: |
+          cmake --build build --config Release -- -j 4
+
+      # 6. 列出构建产物（方便调试）
+      - name: List build outputs
+        run: |
+          echo "Build directory content:"
+          ls -R build
+      - name: Tag
+        id: tag
+        env:
+          XX: ''
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          TAG=v${VER}$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
+          git tag -a $TAG -m "Published version $TAG" ${GITHUB_SHA}
+          git push origin $TAG
+          echo "new_tag=$TAG" >> $GITHUB_OUTPUT
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/**/*.so
+            build/**/*.dylib
+            build/**/*.dll
+          tag_name: ${{ steps.tag.outputs.new_tag }}
