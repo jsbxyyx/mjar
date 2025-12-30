@@ -54,7 +54,8 @@ static jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     memcpy(hexarray, input, data_length);
     if (LOG_DEBUG) {
         printf("----- log array start -----\n");
-        for (int i = 0; i < data_length; ++i) {
+        int limit = data_length < 8 ? data_length : 8;
+        for (int i = 0; i < limit; ++i) {
             printf("%02x", hexarray[i]);
         }
         printf("\n----- log array end -----\n");
@@ -75,7 +76,8 @@ static jbyteArray encrypt(JNIEnv *jni_env, jbyteArray jarray) {
     AES_CBC_encrypt_buffer(&ctx, (uint8_t *) hexarray, data_padded_length);
     if (LOG_DEBUG) {
         printf("----- log encrypted start -----\n");
-        for (int i = 0; i < data_padded_length; ++i) {
+        int limit = data_padded_length < 8 ? data_padded_length : 8;
+        for (int i = 0; i < limit; ++i) {
             printf("%02x", hexarray[i]);
         }
         printf("\n----- log encrypted end -----\n");
@@ -115,7 +117,8 @@ static jbyteArray decrypt(JNIEnv *jni_env, const char *name, unsigned char *data
 
     if (LOG_DEBUG) {
         printf("----- decrypted start -----\n");
-        for (int i = 0; i < data_length; ++i) {
+        int limit = data_length < 8 ? data_length : 8;
+        for (int i = 0; i < limit; ++i) {
             printf("%02x", hexarray[i]);
         }
         printf("\n----- decrypted end -----\n");
@@ -344,9 +347,9 @@ static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread
             };
             // 此时类已经 Prepare 完毕，注册 Native 方法是安全的
             if (jni_env->RegisterNatives(klass, methods, 1) == 0) {
-                printf("--- [JVMTI] Native method bound to [%s] via OnClassPrepare\n", signature);
+                printf("--- Native method bound to [%s]\n", signature);
             } else {
-                printf("--- [JVMTI] ERROR: RegisterNatives failed\n");
+                printf("--- ERROR: RegisterNatives failed\n");
             }
         }
         jvmti_env->Deallocate((unsigned char*)signature);
