@@ -15,6 +15,7 @@
 #include "aes.hpp"
 #include "pkcs7_padding.hpp"
 #include "sha1.hpp"
+#include "stringutils.hpp"
 
 #define CBC 1
 #define CTR 1
@@ -263,26 +264,25 @@ static JavaVM *g_vm = NULL;
 const char *pkg = NULL;
 
 static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
-                                       JNIEnv *jni_env,
-                                       jclass class_being_redefined,
-                                       jobject loader,
-                                       const char *name,
-                                       jobject protection_domain,
-                                       jint class_data_len,
-                                       const unsigned char *class_data,
-                                       jint *new_class_data_len,
-                                       unsigned char **new_class_data) {
-
-    if (name != NULL && strstr(name, "/asm/ClassReader") != NULL) {
+                                              JNIEnv *jni_env,
+                                              jclass class_being_redefined,
+                                              jobject loader,
+                                              const char *name,
+                                              jobject protection_domain,
+                                              jint class_data_len,
+                                              const unsigned char *class_data,
+                                              jint *new_class_data_len,
+                                              unsigned char **new_class_data) {
+    if (name != NULL && stringutils_endswith(name, "/asm/ClassReader")) {
         printf("--- ClassFileLoadHook: %s\n", name);
     }
 
     if (LOG_DEBUG) {
-        if (name != NULL && strstr(name, pkg) != NULL) {
+        if (name != NULL && stringutils_startswith(pkg, name)) {
             printf("--- ClassFileLoadHook: %s\n", name);
         }
     }
-    if (name != NULL && strstr(name, pkg) != NULL && strstr(name, "CGLIB$$") == NULL) {
+    if (name != NULL && stringutils_startswith(pkg, name) && strstr(name, "CGLIB$$") == NULL) {
         printf("--- decrypt class %s\n", name);
 
         // *new_class_data_len = class_data_len;
@@ -336,31 +336,46 @@ static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
     }
 }
 
-static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread thread, jclass klass) {
-    char* signature;
+static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv *jni_env, jthread thread, jclass klass) {
+    char *signature;
     if (jvmti_env->GetClassSignature(klass, &signature, NULL) == JVMTI_ERROR_NONE) {
         // 注意：Lorg/springframework/asm/ClassReader; 是标准的 JVM 签名格式
-        if (signature != NULL && strstr(signature, "/asm/ClassReader;") != NULL) {
-            JNINativeMethod methods[] = {
-                {(char*)"maybeDecrypt", (char*)"([BI)[B", (void*)&native_maybe_decrypt}
-            };
-            if (jni_env->RegisterNatives(klass, methods, 1) == 0) {
-                printf("--- Native method bound to [%s]\n", signature);
+        if (signature != NULL && stringutils_endswith(signature, "/asm/ClassReader;")) {
+            // 排除 jdk 签名
+            if (!(
+                stringutils_startswith("Ljava/", signature) ||
+                stringutils_startswith("Ljavax/", signature) ||
+                stringutils_startswith("Lsun/", signature) ||
+                stringutils_startswith("Lcom/sun/", signature) ||
+                stringutils_startswith("Ljdk/", signature) ||
+                stringutils_startswith("Lorg/w3c/dom/", signature) ||
+                stringutils_startswith("Lorg/xml/sax/", signature) ||
+                stringutils_startswith("Lorg/ietf/", signature) ||
+                stringutils_startswith("Lnetscape/javascript/", signature)
+            )) {
+                JNINativeMethod methods[] = {
+                    {(char *) "maybeDecrypt", (char *) "([BI)[B", (void *) &native_maybe_decrypt}
+                };
+                if (jni_env->RegisterNatives(klass, methods, 1) == 0) {
+                    printf("--- Native method bound to [%s]\n", signature);
+                } else {
+                    printf("--- ERROR: RegisterNatives failed\n");
+                }
             } else {
-                printf("--- ERROR: RegisterNatives failed\n");
+                printf("--- Native method not bound to [%s]\n", signature);
             }
         }
-        jvmti_env->Deallocate((unsigned char*)signature);
+        jvmti_env->Deallocate((unsigned char *) signature);
     }
 }
 
 static bool load_key_from_env() {
-    const char* path = getenv("MJAR_SECRET_PATH");
+    const char *path = getenv("MJAR_SECRET_PATH");
     if (path == NULL) {
         fprintf(stderr, "--- [MJAR] Error: Environment variable MJAR_SECRET_PATH not found.\n");
         return false;
     }
-    FILE* fp = fopen(path, "r");
+    FILE *fp = fopen(path, "r");
     if (!fp) {
         return false;
     }
@@ -374,7 +389,7 @@ static bool load_key_from_env() {
         sha1nfo s;
         sha1_init(&s);
         sha1_write(&s, buffer, strlen(buffer));
-        uint8_t* hash_result = sha1_result(&s);
+        uint8_t *hash_result = sha1_result(&s);
         memcpy(AES_KEY, hash_result, 16);
 
         memset(buffer, 0, sizeof(buffer));
@@ -460,7 +475,7 @@ Agent_OnLoad(JavaVM *vm,
     return JNI_OK;
 }
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     printf("--- [MJAR] JNI_OnLoad\n");
 
     if (load_key_from_env()) {

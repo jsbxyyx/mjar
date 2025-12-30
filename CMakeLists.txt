@@ -12,22 +12,19 @@ message(STATUS "JNI include dirs: ${JNI_INCLUDE_DIRS}")
 message(STATUS "JNI libraries: ${JNI_LIBRARIES}")
 
 add_library(mjar SHARED
-    mjar.cpp
-    aes.c
-    pkcs7_padding.c
-    sha1.c
+        mjar.cpp
+        aes.c
+        pkcs7_padding.c
+        sha1.c
+        stringutils.c
 )
 
 target_include_directories(mjar
-    PRIVATE
+        PRIVATE
         ${JNI_INCLUDE_DIRS}
 )
 
 target_link_libraries(mjar
-    PRIVATE
+        PRIVATE
         ${JNI_LIBRARIES}
-)
-
-set_target_properties(mjar PROPERTIES
-    OUTPUT_NAME "mjar"
 )
