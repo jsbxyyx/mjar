@@ -273,8 +273,7 @@ static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
                                        jint *new_class_data_len,
                                        unsigned char **new_class_data) {
 
-    if (name != NULL && (strcmp(name, "org/springframework/asm/ClassReader") == 0
-                 || strcmp(name, "org/objectweb/asm/ClassReader") == 0)) {
+    if (name != NULL && strstr(name, "/asm/ClassReader") != NULL) {
         printf("--- ClassFileLoadHook: %s\n", name);
     }
 
