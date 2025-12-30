@@ -1,6 +1,6 @@
 # mjar
 
-[中文](README.md) 英文
+[中文](README.md) English
 
 `mjar` is a **JVMTI agent + JNI library** that works together with [mjar-java](https://github.com/jsbxyyx/mjar-java) to:
 
