@@ -85,7 +85,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          TAG=${RUN_OS}-v$(TZ='Asia/Singapore' date +%Y%m%d%H%M)
+          TAG=${RUN_OS}-v$(TZ='Asia/Singapore' date +%Y%m%d-%H%M)
           git tag -a $TAG -m "Published version $TAG" ${GITHUB_SHA}
           git push origin $TAG
           echo "new_tag=$TAG" >> $GITHUB_OUTPUT
