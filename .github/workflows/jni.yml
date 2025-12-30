@@ -29,11 +29,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. 安装 JDK（这里用 Temurin 17，你可以换成 8/11/21 等）
+      # 1. 安装 JDK
       - name: Set up JDK
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: 'zulu'
           java-version: '8'
 
       # 2. 如果需要，可以打印 JAVA_HOME
