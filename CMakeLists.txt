@@ -15,6 +15,7 @@ add_library(mjar SHARED
     mjar.cpp
     aes.c
     pkcs7_padding.c
+    sha1.c
 )
 
 target_include_directories(mjar

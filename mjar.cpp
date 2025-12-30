@@ -14,6 +14,7 @@
 
 #include "aes.hpp"
 #include "pkcs7_padding.hpp"
+#include "sha1.hpp"
 
 #define CBC 1
 #define CTR 1
@@ -356,6 +357,41 @@ static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread
     }
 }
 
+static bool load_key_from_env() {
+    const char* path = getenv("MJAR_SECRET_PATH");
+    if (path == NULL) {
+        fprintf(stderr, "--- [MJAR] Error: Environment variable MJAR_SECRET_PATH not found.\n");
+        return false;
+    }
+    FILE* fp = fopen(path, "r");
+    if (!fp) {
+        return false;
+    }
+    setvbuf(fp, NULL, _IONBF, 0);
+    bool is_new_key = false;
+    char buffer[256];
+    memset(buffer, 0, sizeof(buffer));
+    if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        buffer[strcspn(buffer, "\r\n")] = 0;
+
+        sha1nfo s;
+        sha1_init(&s);
+        sha1_write(&s, buffer, strlen(buffer));
+        uint8_t* hash_result = sha1_result(&s);
+        memcpy(AES_KEY, hash_result, 16);
+
+        memset(buffer, 0, sizeof(buffer));
+        is_new_key = true;
+    }
+    fclose(fp);
+#ifdef _WIN32
+    _putenv_s("MJAR_SECRET_PATH", "");
+#else
+    unsetenv("MJAR_SECRET_PATH");
+#endif
+    return is_new_key;
+}
+
 JNIEXPORT jint JNICALL
 Agent_OnLoad(JavaVM *vm,
              char *options,
@@ -368,9 +404,14 @@ Agent_OnLoad(JavaVM *vm,
         printf("ERROR: Unable to access JVMTI!\n");
         return JNI_ERR;
     }
+    printf("--- [MJAR] Agent_OnLoad\n");
 
     m_pJvmTI = jvmti;
     g_vm = vm;
+
+    if (load_key_from_env()) {
+        fprintf(stdout, "--- [MJAR] Secret loaded from file and purged.\n");
+    }
 
     pkg = strdup(options);
     printf("--- options %s\n", options);
@@ -420,4 +461,14 @@ Agent_OnLoad(JavaVM *vm,
     }
 
     return JNI_OK;
+}
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    printf("--- [MJAR] JNI_OnLoad\n");
+
+    if (load_key_from_env()) {
+        fprintf(stdout, "--- [MJAR] Secret loaded from file and purged.\n");
+    }
+
+    return JNI_VERSION_1_8;
 }
