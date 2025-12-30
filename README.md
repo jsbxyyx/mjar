@@ -1,6 +1,6 @@
 # mjar
 
-中文 [英文](README_en.md)
+中文 [English](README_en.md)
 
 `mjar` 是一个基于 **JVMTI Agent + JNI** 的原生库，用于配合 [mjar-java](https://github.com/jsbxyyx/mjar-java) 实现：
 
