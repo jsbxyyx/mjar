@@ -341,12 +341,10 @@ static void JNICALL OnClassPrepare(jvmtiEnv *jvmti_env, JNIEnv* jni_env, jthread
     char* signature;
     if (jvmti_env->GetClassSignature(klass, &signature, NULL) == JVMTI_ERROR_NONE) {
         // 注意：Lorg/springframework/asm/ClassReader; 是标准的 JVM 签名格式
-        if (signature != NULL && (strcmp(signature, "Lorg/springframework/asm/ClassReader;") == 0
-            || strcmp(signature, "Lorg/objectweb/asm/ClassReader;") == 0)) {
+        if (signature != NULL && strstr(signature, "/asm/ClassReader;") != NULL) {
             JNINativeMethod methods[] = {
                 {(char*)"maybeDecrypt", (char*)"([BI)[B", (void*)&native_maybe_decrypt}
             };
-            // 此时类已经 Prepare 完毕，注册 Native 方法是安全的
             if (jni_env->RegisterNatives(klass, methods, 1) == 0) {
                 printf("--- Native method bound to [%s]\n", signature);
             } else {
