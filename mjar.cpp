@@ -2,6 +2,7 @@
 #include "mjar.h"
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 
 #include "com_github_jsbxyyx_mjar_Mjarencrypt.h"
 
@@ -288,11 +289,26 @@ static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
         printf("--- decrypt class %s\n", name);
 
         if (class_being_redefined != NULL) {
-            fprintf(stdout, "--- Security Alert: Blocking [%s]\n", name);
-            static unsigned char poison_bytecode[] = {};
-            *new_class_data_len = sizeof(poison_bytecode);
-            jvmti_env->Allocate(*new_class_data_len, new_class_data);
-            memcpy(*new_class_data, poison_bytecode, *new_class_data_len);
+            fprintf(stdout, "--- Security 418 for class: [%s]\n", name);
+
+            jint poison_len = 100 + rand() % 100;
+            unsigned char *poison_buf = NULL;
+            jvmti_env->Allocate(poison_len, &poison_buf);
+            if (poison_buf != NULL) {
+                memset(poison_buf, 0x66, poison_len);
+
+                poison_buf[0] = 0xCA;
+                poison_buf[1] = 0xFE;
+                poison_buf[2] = 0xBA;
+                poison_buf[3] = 0xBE;
+                poison_buf[4] = 0x00;
+                poison_buf[5] = 0x00;
+                poison_buf[6] = 0xFF;
+                poison_buf[7] = 0xFF;
+
+                *new_class_data_len = poison_len;
+                *new_class_data = poison_buf;
+            }
             return;
         }
 
@@ -488,6 +504,7 @@ Agent_OnLoad(JavaVM *vm,
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     printf("--- [MJAR] JNI_OnLoad\n");
+    srand((unsigned) time(NULL));
 
     if (load_key_from_env()) {
         fprintf(stdout, "--- [MJAR] Secret loaded from file and purged.\n");
