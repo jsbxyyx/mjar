@@ -289,7 +289,7 @@ static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
         printf("--- decrypt class %s\n", name);
 
         if (class_being_redefined != NULL) {
-            fprintf(stdout, "--- Security 418 for class: [%s]\n", name);
+            fprintf(stdout, "--- 418 for class: [%s]\n", name);
 
             jint poison_len = 100 + rand() % 100;
             unsigned char *poison_buf = NULL;
