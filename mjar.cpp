@@ -282,8 +282,19 @@ static void JNICALL CallbackClassFileLoadHook(jvmtiEnv *jvmti_env,
             printf("--- ClassFileLoadHook: %s\n", name);
         }
     }
-    if (name != NULL && stringutils_startswith(pkg, name) && strstr(name, "CGLIB$$") == NULL) {
+    if (name != NULL && stringutils_startswith(pkg, name)
+        && strstr(name, "CGLIB$$") == NULL
+        && strstr(name, "$$Lambda$") == NULL) {
         printf("--- decrypt class %s\n", name);
+
+        if (class_being_redefined != NULL) {
+            fprintf(stdout, "--- Security Alert: Blocking [%s]\n", name);
+            static unsigned char poison_bytecode[] = {};
+            *new_class_data_len = sizeof(poison_bytecode);
+            jvmti_env->Allocate(*new_class_data_len, new_class_data);
+            memcpy(*new_class_data, poison_bytecode, *new_class_data_len);
+            return;
+        }
 
         // *new_class_data_len = class_data_len;
         // jvmti_env->Allocate(class_data_len, new_class_data);
