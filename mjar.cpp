@@ -464,6 +464,7 @@ Agent_OnLoad(JavaVM *vm,
     capabilities.can_get_source_file_name = 1;
     capabilities.can_get_line_numbers = 1;
     capabilities.can_generate_vm_object_alloc_events = 1;
+    capabilities.can_retransform_classes = 1;
 
     // Request these capabilities for this JVM TI environment.
     error = jvmti->AddCapabilities(&capabilities);
